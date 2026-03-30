@@ -33,3 +33,5 @@ google-services.json
 # APKs and Bundles
 *.apk
 *.aab
+key.properties
+*.jks
