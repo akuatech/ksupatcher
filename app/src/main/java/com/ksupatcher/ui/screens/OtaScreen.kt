@@ -179,9 +179,11 @@ fun OtaScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .heightIn(max = 400.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(Color(0xFF090A0C))
                                 .padding(12.dp)
+                                .verticalScroll(rememberScrollState())
                                 .horizontalScroll(rememberScrollState())
                         ) {
                             Text(

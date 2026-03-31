@@ -89,7 +89,8 @@ fun KsuPatcherNavGraph(
                     onPickBoot = viewModel::importBootImage,
                     onPickModule = viewModel::importModule,
                     onRunPatch = viewModel::runPatch,
-                    onRunLkm = viewModel::runLkmUpdate
+                    onRunLkm = viewModel::runLkmUpdate,
+                    onReset = viewModel::resetOta
                 )
             }
             composable("ota") {

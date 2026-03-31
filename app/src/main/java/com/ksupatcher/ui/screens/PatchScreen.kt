@@ -44,7 +44,8 @@ fun PatchScreen(
     onPickBoot: (Uri) -> Unit,
     onPickModule: (Uri) -> Unit,
     onRunPatch: () -> Unit,
-    onRunLkm: () -> Unit
+    onRunLkm: () -> Unit,
+    onReset: () -> Unit
 ) {
     val bootPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -164,87 +165,129 @@ fun PatchScreen(
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Spacer(modifier = Modifier.height(24.dp))
+
+        val isOtaActive = state.otaState.phase !in listOf(OtaPhase.IDLE, OtaPhase.DONE, OtaPhase.ERROR, OtaPhase.NO_ROOT, OtaPhase.NO_OTA_PENDING)
+        val showStartButton = !patch.isPatching && !isOtaActive && (patch.method == InstallMethod.PATCH || state.otaState.phase == OtaPhase.IDLE)
+        val showResetButton = !patch.isPatching && !isOtaActive && patch.method == InstallMethod.LKM && state.otaState.phase != OtaPhase.IDLE
+
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             AnimatedVisibility(
                 visible = patch.isPatching,
                 enter = expandVertically(),
                 exit = shrinkVertically()
             ) {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    Text(
-                        text = patch.status ?: "Processing...",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        AnimatedVisibility(
-            visible = !patch.isPatching && state.otaState.phase == OtaPhase.IDLE,
-            enter = expandVertically(),
-            exit = shrinkVertically()
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(
-                    onClick = if (patch.method == InstallMethod.PATCH) onRunPatch else onRunLkm,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text(
-                        text = if (patch.method == InstallMethod.PATCH) "Start Patching" else "Start Updating",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-
-                if (patch.method == InstallMethod.PATCH && !patch.status.isNullOrBlank()) {
-                    Card(
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (patch.status.contains("failed", ignoreCase = true))
-                                MaterialTheme.colorScheme.errorContainer
-                            else
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                    Column(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                         Text(
-                            text = patch.status,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (patch.status.contains("failed", ignoreCase = true))
-                                MaterialTheme.colorScheme.onErrorContainer
-                            else
-                                MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                            text = patch.status ?: "Processing...",
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     }
                 }
             }
+
+            if (showStartButton) {
+                Button(
+                    onClick = { if (patch.method == InstallMethod.PATCH) onRunPatch() else onRunLkm() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF89C4FF),
+                        contentColor = Color(0xFF1B2E3F)
+                    )
+                ) {
+                    Text(
+                        text = if (patch.method == InstallMethod.PATCH) "Start Patching" else "Update LKM",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+            }
+
+            if (showResetButton) {
+                OutlinedButton(
+                    onClick = onReset,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Clear / Reset")
+                }
+            }
+
+            if (patch.method == InstallMethod.LKM && state.rootStatus != com.ksupatcher.viewmodel.RootStatus.GRANTED) {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Root permission is required.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+
+            if (!patch.status.isNullOrBlank()) {
+                val isFailed = patch.status.contains("failed", ignoreCase = true) || patch.status.contains("error", ignoreCase = true)
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isFailed)
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                        else
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = patch.status,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isFailed) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                }
+            }
         }
-    }
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         AnimatedVisibility(
             visible = !patch.lastCommand.isNullOrBlank() || !patch.lastOutput.isNullOrBlank(),
@@ -275,6 +318,17 @@ fun PatchScreen(
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = Color(0xFF9098A9)
                         )
+                        IconButton(
+                            onClick = onReset,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.DeleteSweep,
+                                contentDescription = "Clear Terminal",
+                                tint = Color(0xFF9098A9),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                     
                     Spacer(modifier = Modifier.height(12.dp))
@@ -283,29 +337,51 @@ fun PatchScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .heightIn(max = 400.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color(0xFF090A0C))
                                 .padding(12.dp)
+                                .verticalScroll(rememberScrollState())
                                 .horizontalScroll(rememberScrollState())
                         ) {
                             Column {
-                                if (!patch.lastCommand.isNullOrBlank()) {
-                                    Text(
-                                        text = "$ " + patch.lastCommand,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = Color(0xFF62A0EA)
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                }
+                                if (patch.method == InstallMethod.PATCH) {
+                                    if (!patch.lastCommand.isNullOrBlank()) {
+                                        Text(
+                                            text = "$ " + patch.lastCommand,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFF62A0EA)
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                    }
 
-                                if (!patch.lastOutput.isNullOrBlank()) {
-                                    Text(
-                                        text = patch.lastOutput ?: "",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = Color(0xFFE7EAF3)
-                                    )
+                                    if (!patch.lastOutput.isNullOrBlank()) {
+                                        Text(
+                                            text = patch.lastOutput ?: "",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFFE7EAF3)
+                                        )
+                                    }
+                                } else {
+                                    if (!patch.lastCommand.isNullOrBlank()) {
+                                        Text(
+                                            text = "$ " + patch.lastCommand,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFF62A0EA)
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                    }
+                                    if (state.otaState.log.isNotBlank()) {
+                                        Text(
+                                            text = state.otaState.log.trimStart('\n'),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFFE7EAF3)
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -348,7 +348,7 @@ class MainViewModel(
                 it.copy(
                     patchState = it.patchState.copy(
                         status = "Patching boot image...",
-                        lastCommand = "ksud=${ksud.absolutePath} magiskboot=${magiskboot.absolutePath} work=${workDir.absolutePath}"
+                        lastCommand = "ksud boot-patch"
                     )
                 )
             }
@@ -601,9 +601,16 @@ class MainViewModel(
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
                         sb.append(line).append('\n')
-                        val current = sb.toString()
-                        _state.update {
-                            it.copy(patchState = it.patchState.copy(lastOutput = current))
+                        val currentFull = sb.toString()
+                        val currentLine = line + "\n"
+                        _state.update { state ->
+                            val patch = state.patchState.copy(lastOutput = currentFull)
+                            val ota = if (state.otaState.phase != OtaPhase.IDLE) {
+                                state.otaState.copy(log = state.otaState.log + currentLine)
+                            } else {
+                                state.otaState
+                            }
+                            state.copy(patchState = patch, otaState = ota)
                         }
                     }
                 } finally {
@@ -638,7 +645,20 @@ class MainViewModel(
     }
 
     fun resetOta() {
-        _state.update { it.copy(otaState = OtaState()) }
+        _state.update { 
+            it.copy(
+                otaState = OtaState(),
+                patchState = it.patchState.copy(
+                    lastCommand = null,
+                    lastOutput = null,
+                    status = null,
+                    bootImageName = null,
+                    bootImagePath = null,
+                    moduleName = null,
+                    modulePath = null
+                )
+            )
+        }
     }
 
     fun runOtaPatch() {
@@ -660,7 +680,15 @@ class MainViewModel(
         }
 
         _state.update {
-            it.copy(otaState = OtaState(phase = OtaPhase.CHECKING_ROOT, isLkmMode = lkmMode))
+            it.copy(
+                otaState = OtaState(phase = OtaPhase.CHECKING_ROOT, isLkmMode = lkmMode),
+                patchState = it.patchState.copy(
+                    isPatching = true,
+                    lastCommand = if (lkmMode) "ksud install" else it.patchState.lastCommand,
+                    lastOutput = null,
+                    status = if (lkmMode) "Preparing LKM update..." else it.patchState.status
+                )
+            )
         }
 
         if (!RootShell.isRooted()) {
@@ -672,135 +700,158 @@ class MainViewModel(
             }
             if (!granted) {
                 setPhase(OtaPhase.NO_ROOT)
+                _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "Root access denied")) }
                 appendLog("Root access denied. Please grant root permission to this app.")
                 return
             }
         }
         appendLog("Root access granted.")
+        val variantName = if (_state.value.patchState.variant == KsuVariant.KSUN) "KernelSU-Next" else "KernelSU"
+        appendLog("Target variant: $variantName")
+        _state.update { it.copy(patchState = it.patchState.copy(status = "Root access granted ($variantName)")) }
 
-        if (!lkmMode) {
-            setPhase(OtaPhase.CHECKING_OTA_PROP)
-            appendLog("Checking for pending OTA (getprop ota.other.vbmeta_digest)...")
-            val otaProp = try {
-                RootShell.getProp("ota.other.vbmeta_digest")
+        try {
+            if (!lkmMode) {
+                setPhase(OtaPhase.CHECKING_OTA_PROP)
+                appendLog("Checking for pending OTA (getprop ota.other.vbmeta_digest)...")
+                val otaProp = try {
+                    RootShell.getProp("ota.other.vbmeta_digest")
+                } catch (e: Throwable) {
+                    setPhase(OtaPhase.ERROR)
+                    _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "Error reading prop")) }
+                    appendLog("Error reading prop: ${e.message}")
+                    return
+                }
+                if (otaProp.isNullOrBlank()) {
+                    setPhase(OtaPhase.NO_OTA_PENDING)
+                    _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "No OTA pending")) }
+                    appendLog("No OTA update is pending (ota.other.vbmeta_digest is empty).\nApply an OTA update first, then come back here before rebooting.")
+                    return
+                }
+                appendLog("OTA detected. vbmeta_digest = $otaProp")
+            }
+
+            setPhase(OtaPhase.READING_SLOT)
+            val currentSlot = try {
+                RootShell.getProp("ro.boot.slot_suffix") ?: error("ro.boot.slot_suffix returned empty")
             } catch (e: Throwable) {
                 setPhase(OtaPhase.ERROR)
-                appendLog("Error reading prop: ${e.message}")
+                _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "Failed to read slot")) }
+                appendLog("Failed to read slot: ${e.message}")
                 return
             }
-            if (otaProp.isNullOrBlank()) {
-                setPhase(OtaPhase.NO_OTA_PENDING)
-                appendLog("No OTA update is pending (ota.other.vbmeta_digest is empty).\nApply an OTA update first, then come back here before rebooting.")
-                return
+            val nextSlot = if (lkmMode) currentSlot else (if (currentSlot == "_a") "_b" else "_a")
+            _state.update {
+                it.copy(otaState = it.otaState.copy(currentSlot = currentSlot, nextSlot = nextSlot))
             }
-            appendLog("OTA detected. vbmeta_digest = $otaProp")
-        }
+            val targetSlot = nextSlot  // slot whose boot partition we touch
+            appendLog("Current slot: $currentSlot  →  target slot: $targetSlot")
 
-        setPhase(OtaPhase.READING_SLOT)
-        val currentSlot = try {
-            RootShell.getProp("ro.boot.slot_suffix") ?: error("ro.boot.slot_suffix returned empty")
-        } catch (e: Throwable) {
-            setPhase(OtaPhase.ERROR)
-            appendLog("Failed to read slot: ${e.message}")
-            return
-        }
-        val nextSlot = if (lkmMode) currentSlot else (if (currentSlot == "_a") "_b" else "_a")
-        _state.update {
-            it.copy(otaState = it.otaState.copy(currentSlot = currentSlot, nextSlot = nextSlot))
-        }
-        val targetSlot = nextSlot  // slot whose boot partition we touch
-        appendLog("Current slot: $currentSlot  →  target slot: $targetSlot")
+            setPhase(OtaPhase.DUMPING_BOOT)
+            val workDir = getWorkDir()
+            val dumpedImg = File(workDir, "next-boot.img")
 
-        setPhase(OtaPhase.DUMPING_BOOT)
-        val workDir = getWorkDir()
-        val dumpedImg = File(workDir, "next-boot.img")
-
-        // prefer init_boot over boot if it exists
-        val initBootDevice = "/dev/block/by-name/init_boot$targetSlot"
-        val bootDevice = "/dev/block/by-name/boot$targetSlot"
-        val blockDevice = try {
-            val hasInitBoot = RootShell.run("[ -e $initBootDevice ] && echo yes || echo no").trim()
-            if (hasInitBoot == "yes") {
-                appendLog("init_boot partition detected using init_boot instead of boot.")
-                initBootDevice
-            } else {
+            // prefer init_boot over boot if it exists
+            val initBootDevice = "/dev/block/by-name/init_boot$targetSlot"
+            val bootDevice = "/dev/block/by-name/boot$targetSlot"
+            val blockDevice = try {
+                val hasInitBoot = RootShell.run("[ -e $initBootDevice ] && echo yes || echo no").trim()
+                if (hasInitBoot == "yes") {
+                    appendLog("init_boot partition detected using init_boot instead of boot.")
+                    initBootDevice
+                } else {
+                    bootDevice
+                }
+            } catch (e: Throwable) {
+                appendLog("Could not detect init_boot, falling back to boot. (${e.message})")
                 bootDevice
             }
+
+            appendLog("Dumping: $blockDevice → ${dumpedImg.absolutePath}")
+            try {
+                RootShell.run("dd if=$blockDevice of=${dumpedImg.absolutePath} bs=4096")
+            } catch (e: Throwable) {
+                setPhase(OtaPhase.ERROR)
+                _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "Dump failed")) }
+                appendLog("DD (dump) failed: ${e.message}")
+                return
+            }
+            appendLog("Boot image dumped (${dumpedImg.length() / 1024} KB).")
+
+            setPhase(OtaPhase.PATCHING)
+            val binaryPrepare = ensureBinaries()
+            if (binaryPrepare.isFailure) {
+                setPhase(OtaPhase.ERROR)
+                _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "Binary prep failed")) }
+                appendLog("Binary preparation failed: ${binaryPrepare.exceptionOrNull()?.message}")
+                return
+            }
+            val ksud = resolveBundledBinaryForVariant(_state.value.patchState.variant)
+            val magiskboot = resolveBundledBinary("libmagiskboot.so")
+            val module = _state.value.patchState.modulePath
+            if (module.isNullOrBlank()) {
+                setPhase(OtaPhase.ERROR)
+                _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "No module selected")) }
+                appendLog("No kernel module selected. Go to Patch tab and let the module auto-download, or select one manually.")
+                return
+            }
+            val patchCmd = listOf(
+                ksud.absolutePath,
+                "boot-patch",
+                "-b", dumpedImg.absolutePath,
+                "--kmi", "android12-5.10",
+                "--magiskboot", magiskboot.absolutePath,
+                "--module", module,
+                "-o", workDir.absolutePath
+            )
+            appendLog("Patching boot image...")
+            val patchResult = executeCommandStreaming(patchCmd, workDir)
+            if (patchResult.isFailure) {
+                setPhase(OtaPhase.ERROR)
+                _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "Patch failed")) }
+                appendLog("Patch failed: ${patchResult.exceptionOrNull()?.message}")
+                return
+            }
+            val patchedImg = findPatchedImage(workDir)
+            if (patchedImg == null) {
+                setPhase(OtaPhase.ERROR)
+                _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "Image not found")) }
+                appendLog("Patched image not found in work directory.")
+                return
+            }
+            appendLog("Patched image: ${patchedImg.name} (${patchedImg.length() / 1024} KB)")
+
+            setPhase(OtaPhase.FLASHING)
+            appendLog("Flashing: ${patchedImg.absolutePath} → $blockDevice")
+            try {
+                // make block device writable before flashing
+                RootShell.run("blockdev --setrw $blockDevice")
+                RootShell.run("dd if=${patchedImg.absolutePath} of=$blockDevice bs=4096")
+            } catch (e: Throwable) {
+                setPhase(OtaPhase.ERROR)
+                _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "Flash failed")) }
+                appendLog("DD (flash) failed: ${e.message}")
+                return
+            }
+
+            setPhase(OtaPhase.DONE)
+            _state.update {
+                it.copy(
+                    otaState = it.otaState.copy(rebootRequired = true),
+                    patchState = it.patchState.copy(isPatching = false, status = "Installed successfully")
+                )
+            }
+            appendLog(
+                if (lkmMode)
+                    "LKM update complete. ✓  Safe to reboot."
+                else
+                    "OTA root patch complete. ✓  Please reboot to boot into the updated slot with root preserved."
+            )
         } catch (e: Throwable) {
-            appendLog("Could not detect init_boot, falling back to boot. (${e.message})")
-            bootDevice
-        }
-
-        appendLog("Dumping: $blockDevice → ${dumpedImg.absolutePath}")
-        try {
-            RootShell.run("dd if=$blockDevice of=${dumpedImg.absolutePath} bs=4096")
-        } catch (e: Throwable) {
             setPhase(OtaPhase.ERROR)
-            appendLog("DD (dump) failed: ${e.message}")
-            return
+            _state.update { it.copy(patchState = it.patchState.copy(isPatching = false, status = "Unexpected error")) }
+            appendLog("Unexpected error in flow: ${e.message}")
         }
-        appendLog("Boot image dumped (${dumpedImg.length() / 1024} KB).")
-
-        setPhase(OtaPhase.PATCHING)
-        val binaryPrepare = ensureBinaries()
-        if (binaryPrepare.isFailure) {
-            setPhase(OtaPhase.ERROR)
-            appendLog("Binary preparation failed: ${binaryPrepare.exceptionOrNull()?.message}")
-            return
-        }
-        val ksud = resolveBundledBinaryForVariant(_state.value.patchState.variant)
-        val magiskboot = resolveBundledBinary("libmagiskboot.so")
-        val module = _state.value.patchState.modulePath
-        if (module.isNullOrBlank()) {
-            setPhase(OtaPhase.ERROR)
-            appendLog("No kernel module selected. Go to Patch tab and let the module auto-download, or select one manually.")
-            return
-        }
-        val patchCmd = listOf(
-            ksud.absolutePath,
-            "boot-patch",
-            "-b", dumpedImg.absolutePath,
-            "--kmi", "android12-5.10",
-            "--magiskboot", magiskboot.absolutePath,
-            "--module", module,
-            "-o", workDir.absolutePath
-        )
-        appendLog("Patching boot image...")
-        val patchResult = executeCommandStreaming(patchCmd, workDir)
-        if (patchResult.isFailure) {
-            setPhase(OtaPhase.ERROR)
-            appendLog("Patch failed: ${patchResult.exceptionOrNull()?.message}")
-            return
-        }
-        appendLog(patchResult.getOrNull().orEmpty())
-        val patchedImg = findPatchedImage(workDir)
-        if (patchedImg == null) {
-            setPhase(OtaPhase.ERROR)
-            appendLog("Patched image not found in work directory.")
-            return
-        }
-        appendLog("Patched image: ${patchedImg.name} (${patchedImg.length() / 1024} KB)")
-
-        setPhase(OtaPhase.FLASHING)
-        appendLog("Flashing: ${patchedImg.absolutePath} → $blockDevice")
-        try {
-            // make block device writable before flashing
-            RootShell.run("blockdev --setrw $blockDevice")
-            RootShell.run("dd if=${patchedImg.absolutePath} of=$blockDevice bs=4096")
-        } catch (e: Throwable) {
-            setPhase(OtaPhase.ERROR)
-            appendLog("DD (flash) failed: ${e.message}")
-            return
-        }
-
-        setPhase(OtaPhase.DONE)
-        _state.update { it.copy(otaState = it.otaState.copy(rebootRequired = true)) }
-        appendLog(
-            if (lkmMode)
-                "LKM update complete. ✓  Safe to reboot."
-            else
-                "OTA root patch complete. ✓  Please reboot to boot into the updated slot with root preserved."
-        )
     }
 
     fun rebootNow() {
