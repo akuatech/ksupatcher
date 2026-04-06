@@ -4,24 +4,6 @@ object UpdateConfig {
     const val appOwner = "akuatech"
     const val appRepo = "ksupatcher"
 
-    const val ksuBinaryUrl =
-        "https://github.com/tiann/KernelSU/releases/download/v3.1.0/ksud-aarch64-linux-android"
-
-    const val ksunBinaryUrl =
-        "https://github.com/KernelSU-Next/KernelSU-Next/releases/download/v3.0.1/ksud-aarch64-linux-android"
-
-    const val magiskbootBinaryUrl = "https://example.com/ksupatcher/libmagiskboot.so"
-
-    const val ksuOwner = "Tiann"
-    const val ksuRepo = "KernelSU"
-    const val ksunOwner = "KernelSU-Next"
-    const val ksunRepo = "KernelSU-Next"
-    const val ksudAsset = "ksud-aarch64-linux-android"
-
-    const val magiskOwner = "cyberknight777"
-    const val magiskRepo = "magisk_bins_ndk"
-    const val magiskAsset = "magiskboot"
-
     const val ksuLkmOwner = "cyberknight777"
     const val ksuLkmRepo = "ksu-lkm"
     const val ksuModuleAsset = "kernelsu.ko"

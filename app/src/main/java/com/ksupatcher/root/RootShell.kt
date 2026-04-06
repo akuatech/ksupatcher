@@ -14,7 +14,6 @@ object RootShell {
     private var suProcess: Process? = null
     private var suStdin: BufferedWriter? = null
     private var suStdout: BufferedReader? = null
-    private var suStderr: BufferedReader? = null
 
     @Synchronized
     private fun runRootBlock(input: String): Triple<Boolean, String, String> {
@@ -23,7 +22,6 @@ object RootShell {
                 suProcess = Runtime.getRuntime().exec("su")
                 suStdin = suProcess!!.outputStream.bufferedWriter()
                 suStdout = suProcess!!.inputStream.bufferedReader()
-                suStderr = suProcess!!.errorStream.bufferedReader()
             } catch (e: Exception) {
                 e.printStackTrace()
                 return Triple(false, "", e.toString())
@@ -37,31 +35,51 @@ object RootShell {
         val marker = "__CMD_DONE_${System.nanoTime()}__"
 
         try {
-            // execute command
+            suStdin!!.write("( set -e")
+            suStdin!!.newLine()
             suStdin!!.write(input)
             suStdin!!.newLine()
-            suStdin!!.write("echo $marker")
+            suStdin!!.write(") 2>&1")
+            suStdin!!.newLine()
+            suStdin!!.write("rc=$?")
+            suStdin!!.newLine()
+            suStdin!!.write("printf '%s:%s\\n' '$marker' \"$rc\"")
             suStdin!!.newLine()
             suStdin!!.flush()
 
             val outBuf = StringBuilder()
-            val errBuf = StringBuilder()
+            var exitCode: Int? = null
 
             while (true) {
                 val line = suStdout!!.readLine() ?: break
-                if (line == marker) break
+                if (line.startsWith("$marker:")) {
+                    exitCode = line.substringAfter(':').toIntOrNull()
+                    break
+                }
                 outBuf.appendLine(line)
             }
 
-            while (suStderr!!.ready()) {
-                errBuf.appendLine(suStderr!!.readLine())
+            val output = outBuf.toString().trimEnd()
+            val code = exitCode ?: return Triple(false, output, "Shell execution failed: missing completion marker")
+            if (code != 0) {
+                val error = buildString {
+                    append("Shell command exited with code ")
+                    append(code)
+                    if (output.isNotBlank()) {
+                        append('\n')
+                        append(output)
+                    }
+                }
+                return Triple(false, output, error)
             }
 
-            return Triple(true, outBuf.toString().trimEnd(), errBuf.toString().trimEnd())
+            return Triple(true, output, "")
         } catch (e: Exception) {
             e.printStackTrace()
             suProcess?.destroy()
             suProcess = null
+            suStdin = null
+            suStdout = null
             return Triple(false, "", e.toString())
         }
     }

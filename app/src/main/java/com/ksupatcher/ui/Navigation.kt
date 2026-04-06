@@ -33,6 +33,7 @@ fun KsuPatcherNavGraph(
     viewModel: MainViewModel
 ) {
     val navController = rememberNavController()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val navItems = listOf(
         NavItem("install", "Install") { Icon(Icons.Filled.Build, contentDescription = null) },
         NavItem("ota", "OTA") { Icon(Icons.Filled.SystemUpdate, contentDescription = null) },
@@ -81,7 +82,6 @@ fun KsuPatcherNavGraph(
             modifier = Modifier.padding(padding)
         ) {
             composable("install") {
-                val state by viewModel.state.collectAsStateWithLifecycle()
                 PatchScreen(
                     state = state,
                     onVariantSelected = { viewModel.selectVariant(it) },
@@ -95,7 +95,6 @@ fun KsuPatcherNavGraph(
                 )
             }
             composable("ota") {
-                val state by viewModel.state.collectAsStateWithLifecycle()
                 OtaScreen(
                     otaState = state.otaState,
                     rootStatus = state.rootStatus,
@@ -109,7 +108,6 @@ fun KsuPatcherNavGraph(
                 )
             }
             composable("settings") {
-                val state by viewModel.state.collectAsStateWithLifecycle()
                 SettingsScreen(
                     state = state,
                     onRefreshVersion = { viewModel.refreshVersion() },

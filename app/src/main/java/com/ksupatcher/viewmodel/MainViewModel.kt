@@ -10,10 +10,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.documentfile.provider.DocumentFile
 import androidx.core.content.FileProvider
 import com.ksupatcher.data.AppUpdateInfo
-import com.ksupatcher.data.DownloadState
 import com.ksupatcher.data.SettingsRepository
 import com.ksupatcher.data.UpdateConfig
-import com.ksupatcher.jni.NativeBridge
 import com.ksupatcher.network.DownloadRepository
 import com.ksupatcher.network.GitHubReleaseRepository
 import com.ksupatcher.network.UpdateRepository
@@ -29,6 +27,7 @@ import android.net.Uri
 import android.content.ContentValues
 import android.os.Build
 import android.os.Environment
+import android.os.SystemClock
 import android.provider.MediaStore
 import java.security.MessageDigest
 import java.util.Locale
@@ -68,10 +67,6 @@ data class UiState(
     val appUpdateError: String? = null,
     val appUpdateInfo: AppUpdateInfo? = null,
     val versionError: String? = null,
-    val ksuDownload: DownloadState = DownloadState(),
-    val ksunDownload: DownloadState = DownloadState(),
-    val magiskbootDownload: DownloadState = DownloadState(),
-    val nativeStatus: String? = null,
     val patchState: PatchState = PatchState(),
     val otaState: OtaState = OtaState(),
     val rootStatus: RootStatus = RootStatus.UNKNOWN,
@@ -190,6 +185,7 @@ class MainViewModel(
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val updateDir = getAppUpdateDir()
+                    validateSafeFileName(apkName)
                     val apkFile = File(updateDir, apkName)
                     val checksumFile = File(updateDir, "$apkName.sha256")
 
@@ -240,63 +236,6 @@ class MainViewModel(
         }
     }
 
-    fun downloadKsud(variant: KsuVariant) {
-        val url = when (variant) {
-            KsuVariant.KSU -> UpdateConfig.ksuBinaryUrl
-            KsuVariant.KSUN -> UpdateConfig.ksunBinaryUrl
-        }
-        val name = when (variant) {
-            KsuVariant.KSU -> "ksud-ksu"
-            KsuVariant.KSUN -> "ksud-ksun"
-        }
-        val target = File(getDownloadDir(), name)
-        setDownloadState(variant, DownloadState(isDownloading = true, progress = 0))
-        viewModelScope.launch {
-            val result = downloadRepository.download(url, target) { progress ->
-                setDownloadState(variant, _state.value.valueForVariant(variant).copy(progress = progress))
-            }
-            setDownloadState(
-                variant,
-                _state.value.valueForVariant(variant).copy(
-                    isDownloading = false,
-                    filePath = result.getOrNull()?.absolutePath,
-                    error = result.exceptionOrNull()?.message
-                )
-            )
-        }
-    }
-
-    fun downloadMagiskboot() {
-        val target = File(getDownloadDir(), "libmagiskboot.so")
-        _state.update { it.copy(magiskbootDownload = DownloadState(isDownloading = true, progress = 0)) }
-        viewModelScope.launch {
-            val result = downloadRepository.download(UpdateConfig.magiskbootBinaryUrl, target) { progress ->
-                _state.update { it.copy(magiskbootDownload = it.magiskbootDownload.copy(progress = progress)) }
-            }
-            _state.update {
-                it.copy(
-                    magiskbootDownload = it.magiskbootDownload.copy(
-                        isDownloading = false,
-                        filePath = result.getOrNull()?.absolutePath,
-                        error = result.exceptionOrNull()?.message
-                    )
-                )
-            }
-        }
-    }
-
-    fun checkNativeLibraries() {
-        val result = NativeBridge.tryLoad()
-        _state.update {
-            it.copy(
-                nativeStatus = result.fold(
-                    onSuccess = { "Native libraries loaded" },
-                    onFailure = { error -> "Native load failed: ${error.message}" }
-                )
-            )
-        }
-    }
-
     fun selectVariant(variant: KsuVariant) {
         _state.update { it.copy(patchState = it.patchState.copy(variant = variant)) }
     }
@@ -337,46 +276,6 @@ class MainViewModel(
         }
     }
 
-    fun buildPatchCommand() {
-        val workDir = getWorkDir()
-        val ksud = File(workDir, "ksud").absolutePath
-        val magiskboot = File(workDir, "magiskboot").absolutePath
-        val boot = _state.value.patchState.bootImagePath
-        val module = _state.value.patchState.modulePath
-        val kmi = _state.value.patchState.kmi
-        if (boot.isNullOrBlank() || module.isNullOrBlank()) {
-            _state.update {
-                it.copy(patchState = it.patchState.copy(status = "Select boot.img and kernelsu.ko"))
-            }
-            return
-        }
-        val command = "$ksud boot-patch -b $boot --kmi $kmi --magiskboot $magiskboot --module $module --out ${workDir.absolutePath}"
-        _state.update {
-            it.copy(
-                patchState = it.patchState.copy(
-                    status = "Ready to run with shipped binaries"
-                )
-            )
-        }
-    }
-
-    fun prepareBinaries() {
-        viewModelScope.launch {
-            _state.update { it.copy(patchState = it.patchState.copy(isPatching = true, status = "Downloading binaries...")) }
-            val result = ensureBinaries()
-            _state.update {
-                it.copy(
-                    patchState = it.patchState.copy(
-                        isPatching = false,
-                        status = result.fold(
-                            onSuccess = { "Binaries ready" },
-                            onFailure = { error -> error.message ?: "Failed to prepare binaries" }
-                        )
-                    )
-                )
-            }
-        }
-    }
 
     fun runPatch() {
         val workDir = getWorkDir()
@@ -447,16 +346,16 @@ class MainViewModel(
             val result = executeCommandStreaming(command, workDir, _state.value.patchState.lastOutput)
             val patchedFile = if (result.isSuccess) findPatchedImage(workDir) else null
             val saveResult = if (result.isSuccess && patchedFile != null) {
-                savePatchedImageToDownloads(patchedFile)
+                exportPatchedImage(patchedFile)
             } else {
                 Result.failure(IllegalStateException("Patched image not found in work dir"))
             }
 
             val statusText = if (result.isSuccess) {
                 if (saveResult.isSuccess) {
-                    "Patch completed and saved to Downloads"
+                    "Patch completed and exported"
                 } else {
-                    "Patch completed (export to Downloads failed)"
+                    "Patch completed (export failed)"
                 }
             } else {
                 "Patch failed"
@@ -467,9 +366,9 @@ class MainViewModel(
                 if (result.isSuccess) {
                     append("\n\n")
                     if (saveResult.isSuccess) {
-                        append("Saved to Downloads: ${saveResult.getOrNull()}")
+                        append("Exported to: ${saveResult.getOrNull()}")
                     } else {
-                        append("Failed to save to Downloads: ${saveResult.exceptionOrNull()?.message}")
+                        append("Export failed: ${saveResult.exceptionOrNull()?.message}")
                     }
                 }
             }
@@ -500,7 +399,7 @@ class MainViewModel(
         return candidates.maxByOrNull { it.lastModified() }
     }
 
-    private fun savePatchedImageToDownloads(sourceFile: File): Result<String> = runCatching {
+    private fun exportPatchedImage(sourceFile: File): Result<String> = runCatching {
         val context = getApplication<Application>()
         val fileName = sourceFile.name
 
@@ -513,44 +412,38 @@ class MainViewModel(
             }
 
             val resolver = context.contentResolver
-            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: error("Failed to create destination in Downloads")
+            var uri: Uri? = null
+            try {
+                uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: error("Failed to create destination in Downloads")
 
-            resolver.openOutputStream(uri).use { out ->
-                requireNotNull(out) { "Failed to open Downloads output stream" }
-                sourceFile.inputStream().use { input ->
-                    input.copyTo(out)
+                resolver.openOutputStream(uri).use { out ->
+                    requireNotNull(out) { "Failed to open Downloads output stream" }
+                    sourceFile.inputStream().use { input ->
+                        input.copyTo(out)
+                    }
                 }
-            }
 
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-            uri.toString()
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                uri.toString()
+            } catch (error: Throwable) {
+                uri?.let { resolver.delete(it, null, null) }
+                throw error
+            }
         } else {
-            val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            if (!downloads.exists()) downloads.mkdirs()
+            val downloads = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                ?: File(context.filesDir, "exports")
+            if (!downloads.exists()) {
+                downloads.mkdirs()
+            }
             val target = File(downloads, fileName)
-            sourceFile.copyTo(target, overwrite = true)
+            runCatching { sourceFile.copyTo(target, overwrite = true) }
+                .onFailure { target.delete() }
+                .getOrThrow()
             target.absolutePath
         }
-    }
-
-    private fun setDownloadState(variant: KsuVariant, state: DownloadState) {
-        _state.update {
-            when (variant) {
-                KsuVariant.KSU -> it.copy(ksuDownload = state)
-                KsuVariant.KSUN -> it.copy(ksunDownload = state)
-            }
-        }
-    }
-
-    private fun getDownloadDir(): File {
-        val dir = File(getApplication<Application>().filesDir, "downloads")
-        if (!dir.exists()) {
-            dir.mkdirs()
-        }
-        return dir
     }
 
     private fun getAppUpdateDir(): File {
@@ -669,6 +562,12 @@ class MainViewModel(
         return hash
     }
 
+    private fun validateSafeFileName(fileName: String) {
+        if (fileName != File(fileName).name || fileName.contains('/') || fileName.contains('\\')) {
+            error("Release file name is invalid")
+        }
+    }
+
     private fun computeSha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
@@ -728,27 +627,32 @@ class MainViewModel(
                 val reader = process.inputStream.bufferedReader()
                 val sb = StringBuilder()
                 if (!initialLog.isNullOrBlank()) {
-                    sb.append(initialLog).append("\n\n")
+                    appendTrimmed(sb, initialLog)
+                    appendTrimmed(sb, "\n\n")
                 }
                 
                 val binaryName = File(command.first()).name
                 val simplifiedBinary = binaryName.replace(Regex("^lib"), "").replace(Regex("\\.so$"), "")
                 val prettyCommand = "$ $simplifiedBinary ${command.drop(1).joinToString(" ")}"
-                sb.append(prettyCommand).append("\n")
+                appendTrimmed(sb, prettyCommand)
+                appendTrimmed(sb, "\n")
+                publishStreamingLog(sb.toString(), updatePatch = true)
+
+                var pendingLines = 0
+                var lastEmitAt = SystemClock.elapsedRealtime()
 
                 try {
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
-                        sb.append(line).append('\n')
-                        val currentFull = sb.toString()
-                        _state.update { state ->
-                            val patch = state.patchState.copy(lastOutput = currentFull)
-                            val ota = if (state.otaState.phase != OtaPhase.IDLE && !state.otaState.isLkmMode) {
-                                state.otaState.copy(log = currentFull)
-                            } else {
-                                state.otaState
-                            }
-                            state.copy(patchState = patch, otaState = ota)
+                        appendTrimmed(sb, line.orEmpty())
+                        appendTrimmed(sb, "\n")
+                        pendingLines += 1
+
+                        val now = SystemClock.elapsedRealtime()
+                        if (pendingLines >= STREAM_LOG_EMIT_LINES || now - lastEmitAt >= STREAM_LOG_EMIT_INTERVAL_MS) {
+                            publishStreamingLog(sb.toString(), updatePatch = true)
+                            pendingLines = 0
+                            lastEmitAt = now
                         }
                     }
                 } finally {
@@ -757,11 +661,42 @@ class MainViewModel(
 
                 val exitCode = process.waitFor()
                 val output = sb.toString()
+                publishStreamingLog(output, updatePatch = true)
                 if (exitCode != 0) {
                     error("Exit $exitCode\n$output")
                 }
                 output
             }
+        }
+    }
+
+    private fun appendTrimmed(builder: StringBuilder, text: String) {
+        builder.append(text)
+        val overflow = builder.length - MAX_LOG_CHARS
+        if (overflow > 0) {
+            builder.delete(0, overflow)
+        }
+    }
+
+    private fun appendLogLine(existing: String?, message: String): String {
+        val combined = if (existing.isNullOrBlank()) {
+            message
+        } else {
+            "$existing\n$message"
+        }
+        return if (combined.length > MAX_LOG_CHARS) combined.takeLast(MAX_LOG_CHARS) else combined
+    }
+
+    private fun publishStreamingLog(log: String, updatePatch: Boolean) {
+        _state.update { state ->
+            val trimmed = if (log.length > MAX_LOG_CHARS) log.takeLast(MAX_LOG_CHARS) else log
+            val patch = if (updatePatch) state.patchState.copy(lastOutput = trimmed) else state.patchState
+            val ota = if (state.otaState.phase != OtaPhase.IDLE && !state.otaState.isLkmMode) {
+                state.otaState.copy(log = trimmed)
+            } else {
+                state.otaState
+            }
+            state.copy(patchState = patch, otaState = ota)
         }
     }
 
@@ -815,10 +750,10 @@ class MainViewModel(
         fun appendLog(msg: String) {
             _state.update { state ->
                 if (lkmMode) {
-                    val newOutput = (state.patchState.lastOutput ?: "") + "\n" + msg
+                    val newOutput = appendLogLine(state.patchState.lastOutput, msg)
                     state.copy(patchState = state.patchState.copy(lastOutput = newOutput))
                 } else {
-                    state.copy(otaState = state.otaState.copy(log = state.otaState.log + "\n" + msg))
+                    state.copy(otaState = state.otaState.copy(log = appendLogLine(state.otaState.log, msg)))
                 }
             }
         }
@@ -1055,11 +990,10 @@ class MainViewModel(
             runCatching { RootShell.run("svc power reboot") }
         }
     }
-}
 
-private fun UiState.valueForVariant(variant: KsuVariant): DownloadState {
-    return when (variant) {
-        KsuVariant.KSU -> ksuDownload
-        KsuVariant.KSUN -> ksunDownload
+    private companion object {
+        const val MAX_LOG_CHARS = 64_000
+        const val STREAM_LOG_EMIT_LINES = 8
+        const val STREAM_LOG_EMIT_INTERVAL_MS = 200L
     }
 }
