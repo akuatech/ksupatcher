@@ -70,10 +70,4 @@ if [ "$MSYSTEM" != "" ] ; then
     CLASSPATH=`cygpath --path --mixed "$CLASSPATH"`
 fi
 
-# Escape application args
-SAVEIFS=$IFS
-IFS=$(printf '\n\t')
-APP_ARGS="$@"
-IFS=$SAVEIFS
-
-exec "$JAVACMD" -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$APP_ARGS"
+exec "$JAVACMD" -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"
