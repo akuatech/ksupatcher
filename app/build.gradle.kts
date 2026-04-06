@@ -19,8 +19,8 @@ android {
         applicationId = "com.ksupatcher"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = providers.gradleProperty("ciVersionCode").map(String::toInt).orElse(1).get()
+        versionName = providers.gradleProperty("ciVersionName").orElse("0.1.0").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

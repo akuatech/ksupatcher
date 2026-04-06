@@ -11,6 +11,18 @@ import java.io.File
 class DownloadRepository(
     private val client: OkHttpClient = OkHttpClient()
 ) {
+    suspend fun downloadText(url: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder().url(url).get().build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    error("Download failed: ${response.code}")
+                }
+                response.body?.string() ?: error("Empty response")
+            }
+        }
+    }
+
     suspend fun download(
         url: String,
         targetFile: File,

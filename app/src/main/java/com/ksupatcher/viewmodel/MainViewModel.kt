@@ -1,13 +1,18 @@
 package com.ksupatcher.viewmodel
 
+import android.content.ActivityNotFoundException
 import android.app.Application
+import android.content.ClipData
+import android.content.Intent
+import com.ksupatcher.BuildConfig
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.documentfile.provider.DocumentFile
+import androidx.core.content.FileProvider
+import com.ksupatcher.data.AppUpdateInfo
 import com.ksupatcher.data.DownloadState
 import com.ksupatcher.data.SettingsRepository
 import com.ksupatcher.data.UpdateConfig
-import com.ksupatcher.data.VersionInfo
 import com.ksupatcher.jni.NativeBridge
 import com.ksupatcher.network.DownloadRepository
 import com.ksupatcher.network.GitHubReleaseRepository
@@ -25,6 +30,7 @@ import android.content.ContentValues
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import java.security.MessageDigest
 import java.util.Locale
 
 enum class KsuVariant { KSU, KSUN }
@@ -56,17 +62,17 @@ data class OtaState(
 
 data class UiState(
     val isCheckingVersion: Boolean = false,
-    val versionInfo: VersionInfo? = null,
+    val isUpdatingApp: Boolean = false,
+    val appUpdateProgress: Int = 0,
+    val appUpdateStatus: String? = null,
+    val appUpdateError: String? = null,
+    val appUpdateInfo: AppUpdateInfo? = null,
     val versionError: String? = null,
-    val versionUrl: String = UpdateConfig.versionJsonUrl,
     val ksuDownload: DownloadState = DownloadState(),
     val ksunDownload: DownloadState = DownloadState(),
     val magiskbootDownload: DownloadState = DownloadState(),
     val nativeStatus: String? = null,
     val patchState: PatchState = PatchState(),
-    val latestReleaseTag: String? = null,
-    val updateManifest: com.ksupatcher.data.UpdateManifest? = null,
-    val manifestError: String? = null,
     val otaState: OtaState = OtaState(),
     val rootStatus: RootStatus = RootStatus.UNKNOWN,
     val isCheckingRoot: Boolean = false
@@ -108,11 +114,6 @@ class MainViewModel(
 
     init {
         viewModelScope.launch {
-            settingsRepository.versionUrlFlow.collect { url ->
-                _state.update { it.copy(versionUrl = url) }
-            }
-        }
-        viewModelScope.launch {
             settingsRepository.rootStatusFlow.collect { statusStr ->
                 val status = try { RootStatus.valueOf(statusStr) } catch (_: Exception) { RootStatus.UNKNOWN }
                 _state.update { it.copy(rootStatus = status) }
@@ -124,6 +125,7 @@ class MainViewModel(
             }
         }
         refreshRootStatus()
+        refreshVersion()
     }
 
     fun refreshRootStatus() {
@@ -137,50 +139,98 @@ class MainViewModel(
     }
 
     fun refreshVersion() {
-        _state.update { it.copy(isCheckingVersion = true, versionError = null) }
+        _state.update { it.copy(isCheckingVersion = true, versionError = null, appUpdateError = null) }
         viewModelScope.launch {
-            val result = updateRepository.fetchVersionInfo(_state.value.versionUrl)
+            val currentBuildHash = BuildConfig.VERSION_NAME.trim()
+            val result = updateRepository.fetchAppUpdateInfo(
+                owner = UpdateConfig.appOwner,
+                repo = UpdateConfig.appRepo,
+                currentBuildHash = currentBuildHash
+            )
             _state.update { current ->
                 current.copy(
                     isCheckingVersion = false,
-                    versionInfo = result.getOrNull(),
+                    appUpdateInfo = result.getOrNull(),
                     versionError = result.exceptionOrNull()?.message
                 )
             }
         }
     }
 
-    fun checkLatestReleaseUpdate() {
-        _state.update { it.copy(isCheckingVersion = true, manifestError = null) }
+    fun installAppUpdate() {
+        val updateInfo = _state.value.appUpdateInfo
+        if (updateInfo == null || !updateInfo.isUpdateAvailable) {
+            _state.update {
+                it.copy(appUpdateError = "No update available")
+            }
+            return
+        }
+
+        val apkUrl = updateInfo.apkDownloadUrl
+        val checksumUrl = updateInfo.checksumDownloadUrl
+        val apkName = updateInfo.apkAssetName
+
+        if (apkUrl.isNullOrBlank() || checksumUrl.isNullOrBlank() || apkName.isNullOrBlank()) {
+            _state.update {
+                it.copy(appUpdateError = "Release assets are incomplete")
+            }
+            return
+        }
+
         viewModelScope.launch {
-            val result = updateRepository.fetchUpdateManifestFromLatestRelease(UpdateConfig.ksuLkmOwner, UpdateConfig.ksuLkmRepo)
-            _state.update { current ->
-                if (result.isSuccess) {
-                    val manifest = result.getOrNull()!!
-                    current.copy(
-                        isCheckingVersion = false,
-                        latestReleaseTag = manifest.tag,
-                        updateManifest = manifest,
-                        manifestError = null
-                    )
-                } else {
-                    current.copy(
-                        isCheckingVersion = false,
-                        manifestError = result.exceptionOrNull()?.message
-                    )
+            _state.update {
+                it.copy(
+                    isUpdatingApp = true,
+                    appUpdateProgress = 0,
+                    appUpdateStatus = "Downloading update...",
+                    appUpdateError = null
+                )
+            }
+
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val updateDir = getAppUpdateDir()
+                    val apkFile = File(updateDir, apkName)
+                    val checksumFile = File(updateDir, "$apkName.sha256")
+
+                    downloadRepository.download(apkUrl, apkFile) { progress ->
+                        _state.update {
+                            it.copy(
+                                appUpdateProgress = progress,
+                                appUpdateStatus = "Downloading update..."
+                            )
+                        }
+                    }.getOrThrow()
+
+                    _state.update {
+                        it.copy(appUpdateStatus = "Downloading checksum...")
+                    }
+                    val checksumText = downloadRepository.downloadText(checksumUrl).getOrThrow()
+                    checksumFile.writeText(checksumText)
+
+                    _state.update {
+                        it.copy(appUpdateStatus = "Verifying integrity...")
+                    }
+                    val expectedSha256 = parseChecksum(checksumText, apkName)
+                    val actualSha256 = computeSha256(apkFile)
+                    if (!actualSha256.equals(expectedSha256, ignoreCase = true)) {
+                        apkFile.delete()
+                        checksumFile.delete()
+                        error("Integrity check failed")
+                    }
+
+                    launchPackageInstaller(apkFile)
                 }
             }
-        }
-    }
 
-    fun updateVersionUrl(value: String) {
-        _state.update { it.copy(versionUrl = value) }
-    }
-
-    fun saveVersionUrl() {
-        val url = _state.value.versionUrl.trim()
-        viewModelScope.launch {
-            settingsRepository.setVersionUrl(url)
+            _state.update {
+                it.copy(
+                    isUpdatingApp = false,
+                    appUpdateProgress = if (result.isSuccess) 100 else 0,
+                    appUpdateStatus = if (result.isSuccess) "Integrity verified. Installer opened." else null,
+                    appUpdateError = result.exceptionOrNull()?.message
+                )
+            }
         }
     }
 
@@ -503,6 +553,14 @@ class MainViewModel(
         return dir
     }
 
+    private fun getAppUpdateDir(): File {
+        val dir = File(getApplication<Application>().cacheDir, "updates")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
+
     private fun getWorkDir(): File {
         val dir = File(getApplication<Application>().codeCacheDir, "work")
         if (!dir.exists()) {
@@ -585,6 +643,62 @@ class MainViewModel(
                 }
             }
             throw e
+        }
+    }
+
+    private fun parseChecksum(content: String, apkName: String): String {
+        val line = content
+            .lineSequence()
+            .map(String::trim)
+            .firstOrNull { it.isNotEmpty() }
+            ?: error("Checksum file is empty")
+
+        val parts = line.split(Regex("\\s+"), limit = 2)
+        val hash = parts.firstOrNull()?.trim().orEmpty()
+        if (hash.length != 64) {
+            error("Checksum file is invalid")
+        }
+
+        if (parts.size == 2) {
+            val fileName = parts[1].removePrefix("*").trim()
+            if (fileName.isNotEmpty() && fileName != apkName) {
+                error("Checksum file does not match the APK")
+            }
+        }
+
+        return hash
+    }
+
+    private fun computeSha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read == -1) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+    }
+
+    private fun launchPackageInstaller(apkFile: File) {
+        val context = getApplication<Application>()
+        val apkUri = FileProvider.getUriForFile(
+            context,
+            "${BuildConfig.APPLICATION_ID}.fileprovider",
+            apkFile
+        )
+        val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            data = apkUri
+            clipData = ClipData.newRawUri(apkFile.name, apkUri)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            context.startActivity(installIntent)
+        } catch (_: ActivityNotFoundException) {
+            error("No package installer available")
         }
     }
 

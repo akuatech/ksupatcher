@@ -1,6 +1,5 @@
 package com.ksupatcher.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +19,7 @@ fun SettingsScreen(
     state: UiState,
     onRefreshVersion: () -> Unit,
     onRefreshRoot: () -> Unit,
+    onInstallAppUpdate: () -> Unit,
     onUpdateKmi: (String) -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -56,7 +56,9 @@ fun SettingsScreen(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 24.dp)
         ) {
             Column(
                 modifier = Modifier.padding(20.dp),
@@ -72,7 +74,7 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    
+
                     FilledTonalButton(
                         onClick = onRefreshVersion,
                         enabled = !state.isCheckingVersion,
@@ -93,53 +95,105 @@ fun SettingsScreen(
                     }
                 }
 
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (!state.latestReleaseTag.isNullOrBlank()) {
-                        Text("Latest tag: ${state.latestReleaseTag}", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    if (state.updateManifest != null) {
-                        Text("Manifest timestamp: ${state.updateManifest.timestamp ?: "n/a"}", style = MaterialTheme.typography.bodyMedium)
-                        Text("Manifest sha256: ${state.updateManifest.sha256 ?: "n/a"}", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    state.manifestError?.let { err ->
-                        Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-
-                if (state.versionError != null) {
+                state.versionError?.let { err ->
                     Text(
-                        text = state.versionError,
+                        text = err,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium
                     )
-                } else {
-                    val info = state.versionInfo
-                    if (info != null) {
-                        InfoRow(label = "Version", value = info.versionName)
-                        InfoRow(label = "Updated On", value = info.updatedOn)
-                        InfoRow(label = "Min API", value = info.minApi.toString())
-                        if (!info.notes.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Release Notes",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = info.notes,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                }
+
+                val info = state.appUpdateInfo
+                if (info != null) {
+                    val updateStatus = if (info.isUpdateAvailable) "Update available" else "Up to date"
+                    val updateStatusColor = if (info.isUpdateAvailable) {
+                        MaterialTheme.colorScheme.primary
                     } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    InfoRow(label = "Current Build", value = info.currentBuildHash)
+                    InfoRow(label = "Latest Release", value = info.latestReleaseHash)
+                    InfoRow(
+                        label = "Status",
+                        value = updateStatus,
+                        valueColor = updateStatusColor
+                    )
+                    info.publishedAt?.let {
+                        InfoRow(label = "Published", value = it)
+                    }
+                    info.releaseUrl?.let {
+                        InfoRow(
+                            label = "Release URL",
+                            value = it,
+                            valueColor = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    if (info.isUpdateAvailable) {
+                        FilledTonalButton(
+                            onClick = onInstallAppUpdate,
+                            enabled = !state.isUpdatingApp && state.versionError == null,
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            if (state.isUpdatingApp) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Updating...")
+                            } else {
+                                Text("Install Update", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    if (!info.notes.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "No version information available.",
+                            text = "Release Notes",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = info.notes!!,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                } else if (state.versionError == null) {
+                    Text(
+                        text = "No version information available.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (state.isUpdatingApp) {
+                    LinearProgressIndicator(
+                        progress = { state.appUpdateProgress / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                state.appUpdateStatus?.let { status ->
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                state.appUpdateError?.let { error ->
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }
@@ -148,6 +202,11 @@ fun SettingsScreen(
 
 @Composable
 fun InfoRow(label: String, value: String) {
+    InfoRow(label = label, value = value, valueColor = MaterialTheme.colorScheme.onSurface)
+}
+
+@Composable
+fun InfoRow(label: String, value: String, valueColor: Color) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -161,7 +220,7 @@ fun InfoRow(label: String, value: String) {
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = valueColor,
             fontWeight = FontWeight.SemiBold
         )
     }
@@ -193,7 +252,7 @@ fun KmiSelectionCard(
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface
             )
-            
+
             Text(
                 text = "Select your device's KMI version for compatible patching.",
                 style = MaterialTheme.typography.bodySmall,
@@ -215,29 +274,24 @@ fun KmiSelectionCard(
                         unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                     ),
                     shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth(),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
                 )
 
                 ExposedDropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
-                    modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                    modifier = Modifier.exposedDropdownSize()
                 ) {
                     kmis.forEach { kmi ->
                         DropdownMenuItem(
-                            text = { 
-                                Text(
-                                    text = kmi,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = if (kmi == selectedKmi) FontWeight.Bold else FontWeight.Normal
-                                ) 
-                            },
+                            text = { Text(kmi) },
                             onClick = {
                                 onUpdateKmi(kmi)
                                 expanded = false
-                            },
-                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                            }
                         )
                     }
                 }

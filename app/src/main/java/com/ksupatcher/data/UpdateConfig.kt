@@ -1,7 +1,8 @@
 package com.ksupatcher.data
 
 object UpdateConfig {
-    const val versionJsonUrl = "https://example.com/ksupatcher/version.json"
+    const val appOwner = "akuatech"
+    const val appRepo = "ksupatcher"
 
     const val ksuBinaryUrl =
         "https://github.com/tiann/KernelSU/releases/download/v3.1.0/ksud-aarch64-linux-android"
