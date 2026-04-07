@@ -72,7 +72,7 @@ fun NetworkImage(
                 bitmap = bitmap!!,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit
+                contentScale = contentScale
             )
         } else {
             Box(
