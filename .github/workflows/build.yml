@@ -167,7 +167,15 @@ jobs:
         run: |
           set -euo pipefail
           release_notes_file="$RUNNER_TEMP/release-notes.txt"
-          git log -1 --pretty=%B > "$release_notes_file"
+          git log -1 --pretty=%B | awk '
+            { lines[NR] = $0 }
+            /[^[:space:]]/ { last_non_blank = NR }
+            END {
+              for (i = 1; i <= last_non_blank; i++) {
+                print lines[i]
+              }
+            }
+          ' > "$release_notes_file"
           printf '\n\n(Automated release for commit %s)\n' "$GITHUB_SHA" >> "$release_notes_file"
           echo "RELEASE_NOTES_FILE=$release_notes_file" >> "$GITHUB_ENV"
 
