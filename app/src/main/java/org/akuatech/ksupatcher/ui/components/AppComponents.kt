@@ -1,4 +1,4 @@
-package com.ksupatcher.ui.components
+package org.akuatech.ksupatcher.ui.components
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
@@ -278,12 +278,12 @@ fun StepConnector(modifier: Modifier = Modifier) {
 
 @Composable
 fun RootStatusCard(
-    status: com.ksupatcher.viewmodel.RootStatus,
+    status: org.akuatech.ksupatcher.viewmodel.RootStatus,
     isChecking: Boolean = false,
     onRefresh: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val isGranted = status == com.ksupatcher.viewmodel.RootStatus.GRANTED
+    val isGranted = status == org.akuatech.ksupatcher.viewmodel.RootStatus.GRANTED
     
     val containerColor = if (isGranted) 
         Color(0xFF1B2E1E).copy(alpha = 0.9f) 

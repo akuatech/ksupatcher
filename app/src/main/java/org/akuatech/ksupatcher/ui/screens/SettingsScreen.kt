@@ -1,4 +1,4 @@
-package com.ksupatcher.ui.screens
+package org.akuatech.ksupatcher.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,9 +14,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextDecoration
-import com.ksupatcher.ui.components.RootStatusCard
-import com.ksupatcher.viewmodel.UiState
-import com.ksupatcher.util.DateUtils
+import org.akuatech.ksupatcher.ui.components.RootStatusCard
+import org.akuatech.ksupatcher.viewmodel.UiState
+import org.akuatech.ksupatcher.util.DateUtils
 
 @Composable
 fun SettingsScreen(
@@ -263,7 +263,7 @@ fun KmiSelectionCard(
     onUpdateKmi: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val kmis = com.ksupatcher.data.UpdateConfig.supportedKmis
+    val kmis = org.akuatech.ksupatcher.data.UpdateConfig.supportedKmis
 
     Card(
         shape = RoundedCornerShape(24.dp),

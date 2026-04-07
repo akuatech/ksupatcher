@@ -1,4 +1,4 @@
-package com.ksupatcher
+package org.akuatech.ksupatcher
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -6,9 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ksupatcher.ui.KsuPatcherNavGraph
-import com.ksupatcher.ui.theme.KsuPatcherTheme
-import com.ksupatcher.viewmodel.MainViewModel
+import org.akuatech.ksupatcher.ui.KsuPatcherNavGraph
+import org.akuatech.ksupatcher.ui.theme.KsuPatcherTheme
+import org.akuatech.ksupatcher.viewmodel.MainViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

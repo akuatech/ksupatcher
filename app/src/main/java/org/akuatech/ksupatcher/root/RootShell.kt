@@ -1,4 +1,4 @@
-package com.ksupatcher.root
+package org.akuatech.ksupatcher.root
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

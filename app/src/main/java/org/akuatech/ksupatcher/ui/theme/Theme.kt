@@ -1,4 +1,4 @@
-package com.ksupatcher.ui.theme
+package org.akuatech.ksupatcher.ui.theme
 
 import android.app.Activity
 import android.os.Build

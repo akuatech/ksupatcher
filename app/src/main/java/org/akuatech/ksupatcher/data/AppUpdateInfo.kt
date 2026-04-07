@@ -1,4 +1,4 @@
-package com.ksupatcher.data
+package org.akuatech.ksupatcher.data
 
 data class AppUpdateInfo(
     val currentBuildHash: String,

@@ -12,11 +12,11 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.ksupatcher"
+    namespace = "org.akuatech.ksupatcher"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.ksupatcher"
+        applicationId = "org.akuatech.ksupatcher"
         minSdk = 28
         targetSdk = 35
         versionCode = providers.gradleProperty("ciVersionCode").map(String::toInt).orElse(1).get()

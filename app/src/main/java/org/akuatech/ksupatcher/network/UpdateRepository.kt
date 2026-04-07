@@ -1,4 +1,4 @@
-package com.ksupatcher.network
+package org.akuatech.ksupatcher.network
 
 class UpdateRepository(
     private val releaseRepository: GitHubReleaseRepository = GitHubReleaseRepository()

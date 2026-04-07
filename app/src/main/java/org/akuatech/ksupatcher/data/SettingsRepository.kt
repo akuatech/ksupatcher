@@ -1,4 +1,4 @@
-package com.ksupatcher.data
+package org.akuatech.ksupatcher.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit

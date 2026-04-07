@@ -1,0 +1,71 @@
+#+TITLE: KSUPatcher
+
+#+HTML: <p align="center"><img width="200px" src="./app/src/main/res/mipmap-xxxhdpi/ic_launcher_logoj.jpg"></p>
+
+* Table of contents
+:PROPERTIES:
+:TOC:      
+:END:
+:CONTENTS:
+- [[#about][About]]
+- [[#compatibility][Compatibility]]
+- [[#features][Features]]
+- [[#installation-guide][Installation Guide]]
+- [[#credits][Credits]]
+- [[#license][License]]
+:END:
+
+* About
+
+Ksupatcher is a simple, native tool for managing KernelSU and KernelSU-Next directly on your phone. It handles boot image patching and OTA updates without needing a PC or manual shell scripts. The app uses Jetpack Compose for a clean Material 3 interface and a reliable root shell for the heavy lifting.
+
+* Compatibility
+
+- *Android 9.0+* (API 28)
+- Requires an *unlocked bootloader*.
+- Supports GKI-compatible devices (kernel versions 5.10 to 6.1).
+
+* Features
+
+- *Local Patching:* Patch boot images for KernelSU/KernelSU-Next on-device.
+- *OTA Survival:* Flash patched images to the inactive slot to keep root after a system update.
+- *LKM Support:* Download and install kernel modules (LKM) specific to your KMI.
+- *Live Logs:* Real-time terminal output from ~ksud~ and ~magiskboot~.
+- *Theming:* Full Material 3 and Monet (dynamic color) support.
+- *Updates:* Check for and install new app versions from GitHub.
+
+* Installation Guide
+
+** Method 1: Direct LKM (If already rooted)
+
+1. Open Ksupatcher and grant root access.
+2. Go to the *Install* tab.
+3. Choose your variant (KernelSU or KernelSU-Next).
+4. Select *Install LKM (Current)*.
+5. Tap *Update LKM* and reboot.
+
+** Method 2: Manual Boot Patching
+
+1. Provide your stock ~boot.img~.
+2. In the *Install* tab, select *Patch Boot Image*.
+3. Select your file and tap *Start Patching*.
+4. Move the patched file from your Downloads folder to a PC and flash via fastboot:
+   #+BEGIN_SRC bash
+   fastboot flash boot boot-patched.img
+   #+END_SRC
+
+** Method 3: Post-OTA Flash
+
+1. Install your system OTA update but *do not reboot*.
+2. Open Ksupatcher and go to the *OTA* tab.
+3. Tap *Flash OTA* to patch and flash the inactive slot.
+4. Once finished, tap *Reboot Now* within the app.
+
+* Credits
+
+- The [[https://github.com/tiann/KernelSU][KernelSU]] and [[https://github.com/KernelSU-Next/KernelSU-Next][KernelSU-Next]] teams.
+- [[https://github.com/JoshuaDoes][@JoshuaDoes]] for the root shell wrapper logic.
+
+* License
+
+This project is licensed under the *MIT License*.

@@ -1,4 +1,4 @@
-package com.ksupatcher.data
+package org.akuatech.ksupatcher.data
 
 object UpdateConfig {
     const val appOwner = "akuatech"

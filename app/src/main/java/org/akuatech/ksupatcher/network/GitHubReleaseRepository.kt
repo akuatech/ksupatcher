@@ -1,6 +1,6 @@
-package com.ksupatcher.network
+package org.akuatech.ksupatcher.network
 
-import com.ksupatcher.data.AppUpdateInfo
+import org.akuatech.ksupatcher.data.AppUpdateInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient

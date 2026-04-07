@@ -1,4 +1,4 @@
-package com.ksupatcher.util
+package org.akuatech.ksupatcher.util
 
 import java.time.Instant
 import java.time.LocalDateTime

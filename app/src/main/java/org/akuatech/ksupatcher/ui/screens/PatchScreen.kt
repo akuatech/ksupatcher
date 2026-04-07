@@ -1,4 +1,4 @@
-package com.ksupatcher.ui.screens
+package org.akuatech.ksupatcher.ui.screens
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,12 +30,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import com.ksupatcher.ui.components.*
-import com.ksupatcher.viewmodel.InstallMethod
-import com.ksupatcher.viewmodel.KsuVariant
-import com.ksupatcher.viewmodel.OtaPhase
-import com.ksupatcher.viewmodel.RootStatus
-import com.ksupatcher.viewmodel.UiState
+import org.akuatech.ksupatcher.ui.components.*
+import org.akuatech.ksupatcher.viewmodel.InstallMethod
+import org.akuatech.ksupatcher.viewmodel.KsuVariant
+import org.akuatech.ksupatcher.viewmodel.OtaPhase
+import org.akuatech.ksupatcher.viewmodel.RootStatus
+import org.akuatech.ksupatcher.viewmodel.UiState
 
 @Composable
 fun PatchScreen(
@@ -97,14 +97,14 @@ fun PatchScreen(
         ) {
             AppActionTile(
                 title = "KernelSU",
-                drawableRes = com.ksupatcher.R.drawable.ic_ksu_logo,
+                drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksu_logo,
                 selected = patch.variant == KsuVariant.KSU,
                 onClick = { onVariantSelected(KsuVariant.KSU) },
                 modifier = Modifier.weight(1f)
             )
             AppActionTile(
                 title = "KernelSU-Next",
-                drawableRes = com.ksupatcher.R.drawable.ic_ksun_logo,
+                drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksun_logo,
                 selected = patch.variant == KsuVariant.KSUN,
                 onClick = { onVariantSelected(KsuVariant.KSUN) },
                 modifier = Modifier.weight(1f)
@@ -227,7 +227,7 @@ fun PatchScreen(
             if (showStartButton) {
                 Button(
                     onClick = { if (patch.method == InstallMethod.PATCH) onRunPatch() else onRunLkm() },
-                    enabled = patch.method == InstallMethod.PATCH || state.rootStatus == com.ksupatcher.viewmodel.RootStatus.GRANTED,
+                    enabled = patch.method == InstallMethod.PATCH || state.rootStatus == org.akuatech.ksupatcher.viewmodel.RootStatus.GRANTED,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(64.dp),
@@ -282,7 +282,7 @@ fun PatchScreen(
                 }
             }
 
-            if (patch.method == InstallMethod.LKM && state.rootStatus != com.ksupatcher.viewmodel.RootStatus.GRANTED) {
+            if (patch.method == InstallMethod.LKM && state.rootStatus != org.akuatech.ksupatcher.viewmodel.RootStatus.GRANTED) {
                 Card(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(

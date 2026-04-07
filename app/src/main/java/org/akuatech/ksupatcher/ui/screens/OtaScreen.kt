@@ -1,4 +1,4 @@
-package com.ksupatcher.ui.screens
+package org.akuatech.ksupatcher.ui.screens
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -26,11 +26,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.ksupatcher.ui.components.*
-import com.ksupatcher.viewmodel.KsuVariant
-import com.ksupatcher.viewmodel.OtaPhase
-import com.ksupatcher.viewmodel.OtaState
-import com.ksupatcher.viewmodel.RootStatus
+import org.akuatech.ksupatcher.ui.components.*
+import org.akuatech.ksupatcher.viewmodel.KsuVariant
+import org.akuatech.ksupatcher.viewmodel.OtaPhase
+import org.akuatech.ksupatcher.viewmodel.OtaState
+import org.akuatech.ksupatcher.viewmodel.RootStatus
 
 @Composable
 fun OtaScreen(
@@ -123,14 +123,14 @@ fun OtaScreen(
             ) {
                 AppActionTile(
                     title = "KernelSU",
-                    drawableRes = com.ksupatcher.R.drawable.ic_ksu_logo,
+                    drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksu_logo,
                     selected = variant == KsuVariant.KSU,
                     onClick = { onVariantSelected(KsuVariant.KSU) },
                     modifier = Modifier.weight(1f)
                 )
                 AppActionTile(
                     title = "KernelSU-Next",
-                    drawableRes = com.ksupatcher.R.drawable.ic_ksun_logo,
+                    drawableRes = org.akuatech.ksupatcher.R.drawable.ic_ksun_logo,
                     selected = variant == KsuVariant.KSUN,
                     onClick = { onVariantSelected(KsuVariant.KSUN) },
                     modifier = Modifier.weight(1f)
