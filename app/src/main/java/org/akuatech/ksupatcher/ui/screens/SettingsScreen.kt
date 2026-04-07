@@ -14,6 +14,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.rotate
+import androidx.compose.runtime.saveable.rememberSaveable
 import org.akuatech.ksupatcher.ui.components.RootStatusCard
 import org.akuatech.ksupatcher.viewmodel.UiState
 import org.akuatech.ksupatcher.util.DateUtils
@@ -24,6 +28,7 @@ import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.ui.res.painterResource
 import org.akuatech.ksupatcher.R
 import org.akuatech.ksupatcher.BuildConfig
@@ -39,6 +44,7 @@ fun SettingsScreen(
     onUpdateTheme: (String) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    var versionInfoExpanded by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -77,13 +83,11 @@ fun SettingsScreen(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -116,130 +120,159 @@ fun SettingsScreen(
                     }
                 }
 
-                state.lastVersionCheck?.let { lastCheck ->
-                    Text(
-                        text = "Last checked: ${DateUtils.formatToPlainEnglish(lastCheck)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-
-                state.versionError?.let { err ->
-                    Text(
-                        text = err,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-
                 val info = state.appUpdateInfo
-                if (info != null) {
-                    val updateStatus = if (info.isUpdateAvailable) "Update available" else "Up to date"
-                    val updateStatusColor = if (info.isUpdateAvailable) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+                val hasUpdate = info?.isUpdateAvailable == true
+                val rotation by animateFloatAsState(if (versionInfoExpanded) 180f else 0f, label = "rotate")
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                    InfoRow(
-                        label = "Current Build", 
-                        value = info.currentBuildHash,
-                        valueColor = MaterialTheme.colorScheme.onSurface,
-                        copyable = true
-                    )
-                    InfoRow(
-                        label = "Latest Release", 
-                        value = info.latestReleaseHash,
-                        valueColor = MaterialTheme.colorScheme.onSurface,
-                        copyable = true
-                    )
-                    InfoRow(
-                        label = "Status",
-                        value = updateStatus,
-                        valueColor = updateStatusColor
-                    )
-                    info.publishedAt?.let {
-                        InfoRow(
-                            label = "Published", 
-                            value = DateUtils.formatToPlainEnglish(it),
-                            valueColor = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    info.releaseUrl?.let { url ->
-                        val uriHandler = LocalUriHandler.current
-                        InfoRow(
-                            label = "Release URL",
-                            value = "Open",
-                            valueColor = MaterialTheme.colorScheme.primary,
-                            onClick = { uriHandler.openUri(url) }
-                        )
-                    }
-
-                    if (info.isUpdateAvailable) {
-                        FilledTonalButton(
-                            onClick = onInstallAppUpdate,
-                            enabled = !state.isUpdatingApp && state.versionError == null,
-                            shape = RoundedCornerShape(20.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            if (state.isUpdatingApp) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Updating...")
-                            } else {
-                                Text("Install Update", fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-
-                    if (!info.notes.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.clickable { versionInfoExpanded = !versionInfoExpanded },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (hasUpdate) {
                         Text(
-                            text = "Release Notes",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            text = "Update available",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.primary
                         )
+                    } else if (state.lastVersionCheck != null) {
                         Text(
-                            text = info.notes,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "Last checked: ${DateUtils.formatToPlainEnglish(state.lastVersionCheck)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
-                } else if (state.versionError == null) {
-                    Text(
-                        text = "No version information available.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Icon(
+                        imageVector = Icons.Default.ExpandMore,
+                        contentDescription = if (versionInfoExpanded) "Collapse" else "Expand",
+                        modifier = Modifier
+                            .size(24.dp)
+                            .rotate(rotation),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
 
-                if (state.isUpdatingApp) {
-                    LinearProgressIndicator(
-                        progress = { state.appUpdateProgress / 100f },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                AnimatedVisibility(visible = versionInfoExpanded) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        state.versionError?.let { err ->
+                            Text(
+                                text = err,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
 
-                state.appUpdateStatus?.let { status ->
-                    Text(
-                        text = status,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                        if (info != null) {
+                            val updateStatus = if (info.isUpdateAvailable) "Update available" else "Up to date"
+                            val updateStatusColor = if (info.isUpdateAvailable) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
 
-                state.appUpdateError?.let { error ->
-                    Text(
-                        text = error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                            InfoRow(
+                                label = "Current Build", 
+                                value = info.currentBuildHash,
+                                valueColor = MaterialTheme.colorScheme.onSurface,
+                                copyable = true
+                            )
+                            InfoRow(
+                                label = "Latest Release", 
+                                value = info.latestReleaseHash,
+                                valueColor = MaterialTheme.colorScheme.onSurface,
+                                copyable = true
+                            )
+                            InfoRow(
+                                label = "Status",
+                                value = updateStatus,
+                                valueColor = updateStatusColor
+                            )
+                            info.publishedAt?.let {
+                                InfoRow(
+                                    label = "Published", 
+                                    value = DateUtils.formatToPlainEnglish(it),
+                                    valueColor = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            info.releaseUrl?.let { url ->
+                                val uriHandler = LocalUriHandler.current
+                                InfoRow(
+                                    label = "Release URL",
+                                    value = "Open",
+                                    valueColor = MaterialTheme.colorScheme.primary,
+                                    onClick = { uriHandler.openUri(url) }
+                                )
+                            }
+
+                            if (info.isUpdateAvailable) {
+                                FilledTonalButton(
+                                    onClick = onInstallAppUpdate,
+                                    enabled = !state.isUpdatingApp && state.versionError == null,
+                                    shape = RoundedCornerShape(20.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    if (state.isUpdatingApp) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Updating...")
+                                    } else {
+                                        Text("Install Update", fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+
+                            if (!info.notes.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Release Notes",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = info.notes,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else if (state.versionError == null) {
+                            Text(
+                                text = "No version information available.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        if (state.isUpdatingApp) {
+                            LinearProgressIndicator(
+                                progress = { state.appUpdateProgress / 100f },
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                            )
+                        }
+
+                        state.appUpdateStatus?.let { status ->
+                            Text(
+                                text = status,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        state.appUpdateError?.let { error ->
+                            Text(
+                                text = error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 }
             }
         }
