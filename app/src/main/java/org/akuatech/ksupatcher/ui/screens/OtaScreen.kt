@@ -149,7 +149,7 @@ fun OtaScreen(
             FileSelector(
                 label = "Kernel Module",
                 fileName = moduleName,
-                placeholder = "Option: custom kernelsu.ko",
+                placeholder = "Optional: custom kernelsu.ko",
                 onSelect = { modulePicker.launch(arrayOf("application/octet-stream")) }
             )
         }

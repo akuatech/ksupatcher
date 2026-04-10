@@ -157,7 +157,7 @@ fun PatchScreen(
                 FileSelector(
                     label = "Kernel Module",
                     fileName = patch.moduleName,
-                    placeholder = "Option: custom kernelsu.ko",
+                    placeholder = "Optional: custom kernelsu.ko",
                     onSelect = { modulePicker.launch(arrayOf("application/octet-stream")) }
                 )
             }
@@ -181,7 +181,7 @@ fun PatchScreen(
                 FileSelector(
                     label = "Kernel Module",
                     fileName = patch.moduleName,
-                    placeholder = "Option: custom kernelsu.ko",
+                    placeholder = "Optional: custom kernelsu.ko",
                     onSelect = { modulePicker.launch(arrayOf("application/octet-stream")) }
                 )
             }
