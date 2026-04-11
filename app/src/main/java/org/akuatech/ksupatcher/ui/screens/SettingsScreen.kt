@@ -89,24 +89,92 @@ fun SettingsScreen(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                val info = state.appUpdateInfo
+                val hasUpdate = info?.isUpdateAvailable == true
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Version Info",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    FilledTonalButton(
-                        onClick = onRefreshVersion,
-                        enabled = !state.isCheckingVersion,
-                        shape = RoundedCornerShape(20.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { versionInfoExpanded = !versionInfoExpanded }
+                            .padding(end = 12.dp, top = 4.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        if (state.isCheckingVersion) {
+                        Text(
+                            text = "Version Info",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        val rotation by animateFloatAsState(if (versionInfoExpanded) 180f else 0f, label = "rotate")
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (hasUpdate) {
+                                Text(
+                                    text = "Update available ",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "(View Detail)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            } else if (state.lastVersionCheck != null) {
+                                Text(
+                                    text = "Last checked: ${DateUtils.formatToPlainEnglish(state.lastVersionCheck)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            Icon(
+                                imageVector = Icons.Default.ExpandMore,
+                                contentDescription = if (versionInfoExpanded) "Collapse" else "Expand",
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .rotate(rotation),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+
+                    if (hasUpdate) {
+                        FilledTonalButton(
+                            onClick = onInstallAppUpdate,
+                            enabled = !state.isUpdatingApp && state.versionError == null,
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            if (state.isUpdatingApp) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Updating...")
+                            } else {
+                                Text("Update", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    } else if (state.isCheckingVersion) {
+                        FilledTonalButton(
+                            onClick = onRefreshVersion,
+                            enabled = false,
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -114,44 +182,8 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Checking...")
-                        } else {
-                            Text("Check Now", fontWeight = FontWeight.SemiBold)
                         }
                     }
-                }
-
-                val info = state.appUpdateInfo
-                val hasUpdate = info?.isUpdateAvailable == true
-                val rotation by animateFloatAsState(if (versionInfoExpanded) 180f else 0f, label = "rotate")
-
-                Row(
-                    modifier = Modifier.clickable { versionInfoExpanded = !versionInfoExpanded },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (hasUpdate) {
-                        Text(
-                            text = "Update available",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else if (state.lastVersionCheck != null) {
-                        Text(
-                            text = "Last checked: ${DateUtils.formatToPlainEnglish(state.lastVersionCheck)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Icon(
-                        imageVector = Icons.Default.ExpandMore,
-                        contentDescription = if (versionInfoExpanded) "Collapse" else "Expand",
-                        modifier = Modifier
-                            .size(24.dp)
-                            .rotate(rotation),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
                 }
 
                 AnimatedVisibility(visible = versionInfoExpanded) {
@@ -205,28 +237,6 @@ fun SettingsScreen(
                                     valueColor = MaterialTheme.colorScheme.primary,
                                     onClick = { uriHandler.openUri(url) }
                                 )
-                            }
-
-                            if (info.isUpdateAvailable) {
-                                FilledTonalButton(
-                                    onClick = onInstallAppUpdate,
-                                    enabled = !state.isUpdatingApp && state.versionError == null,
-                                    shape = RoundedCornerShape(20.dp),
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                                ) {
-                                    if (state.isUpdatingApp) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            strokeWidth = 2.dp
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Updating...")
-                                    } else {
-                                        Text("Install Update", fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
                             }
 
                             if (!info.notes.isNullOrBlank()) {
