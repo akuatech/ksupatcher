@@ -150,8 +150,17 @@ fun PatchScreen(
                 FileSelector(
                     label = "Boot Image",
                     fileName = patch.bootImageName,
-                    placeholder = "Select boot.img",
-                    onSelect = { bootPicker.launch(arrayOf("application/octet-stream", "image/*")) }
+                    placeholder = "Select boot.img or rom.zip (full OTA)",
+                    onSelect = {
+                        bootPicker.launch(
+                            arrayOf(
+                                "application/octet-stream",
+                                "image/*",
+                                "application/zip",
+                                "application/x-zip-compressed"
+                            )
+                        )
+                    }
                 )
 
                 FileSelector(

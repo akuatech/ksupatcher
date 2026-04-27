@@ -15,6 +15,7 @@ import org.akuatech.ksupatcher.data.UpdateConfig
 import org.akuatech.ksupatcher.network.DownloadRepository
 import org.akuatech.ksupatcher.network.GitHubReleaseRepository
 import org.akuatech.ksupatcher.root.RootShell
+import org.akuatech.ksupatcher.util.RomZipExtractor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -80,6 +81,7 @@ data class PatchState(
     val method: InstallMethod = InstallMethod.PATCH,
     val bootImageName: String? = null,
     val bootImagePath: String? = null,
+    val pendingRomZipUri: Uri? = null,
     val moduleName: String? = null,
     val modulePath: String? = null,
     val isPatching: Boolean = false,
@@ -266,6 +268,27 @@ class MainViewModel(
 
     fun importBootImage(uri: Uri) {
         viewModelScope.launch {
+            val context = getApplication<Application>()
+            val displayName = withContext(Dispatchers.IO) {
+                DocumentFile.fromSingleUri(context, uri)?.name
+            }
+            val isZip = displayName?.endsWith(".zip", ignoreCase = true) == true ||
+                withContext(Dispatchers.IO) { RomZipExtractor.isLikelyZip(context, uri) }
+
+            if (isZip) {
+                _state.update {
+                    it.copy(
+                        patchState = it.patchState.copy(
+                            bootImageName = displayName ?: "rom.zip",
+                            bootImagePath = null,
+                            pendingRomZipUri = uri,
+                            status = null
+                        )
+                    )
+                }
+                return@launch
+            }
+
             val result = copyUriToWorkDir(uri, "boot.img")
             _state.update {
                 val patch = it.patchState
@@ -273,6 +296,7 @@ class MainViewModel(
                     patchState = patch.copy(
                         bootImageName = result.getOrNull()?.second,
                         bootImagePath = result.getOrNull()?.first,
+                        pendingRomZipUri = null,
                         status = result.exceptionOrNull()?.message
                     )
                 )
@@ -299,19 +323,85 @@ class MainViewModel(
 
     fun runPatch() {
         val workDir = getWorkDir()
-        val boot = _state.value.patchState.bootImagePath
+        val initialBoot = _state.value.patchState.bootImagePath
         val kmi = _state.value.patchState.kmi
-        val bootName = _state.value.patchState.bootImageName
+        val pendingZip = _state.value.patchState.pendingRomZipUri
 
-        if (boot.isNullOrBlank()) {
+        if (initialBoot.isNullOrBlank() && pendingZip == null) {
             _state.update {
-                it.copy(patchState = it.patchState.copy(status = "Please select boot.img"))
+                it.copy(patchState = it.patchState.copy(status = "Please select boot.img or rom.zip"))
             }
             return
         }
 
         viewModelScope.launch {
-            _state.update { it.copy(patchState = it.patchState.copy(isPatching = true, status = "Checking device requirements...")) }
+            _state.update {
+                it.copy(
+                    patchState = it.patchState.copy(
+                        isPatching = true,
+                        status = "Checking device requirements...",
+                        lastOutput = null
+                    )
+                )
+            }
+
+            if (pendingZip != null) {
+                val sourceLabel = _state.value.patchState.bootImageName ?: "rom.zip"
+                val sb = StringBuilder()
+                appendTrimmed(sb, "Reading $sourceLabel...\n")
+                publishStreamingLog(sb.toString(), updatePatch = true)
+                _state.update { it.copy(patchState = it.patchState.copy(status = "Extracting from $sourceLabel...")) }
+
+                val preferInitBoot = hasInitBoot()
+                val extractResult = withContext(Dispatchers.IO) {
+                    runCatching {
+                        RomZipExtractor.extractBootImage(
+                            context = getApplication(),
+                            uri = pendingZip,
+                            workDir = workDir,
+                            preferInitBoot = preferInitBoot,
+                        ) { msg ->
+                            appendTrimmed(sb, msg)
+                            appendTrimmed(sb, "\n")
+                            publishStreamingLog(sb.toString(), updatePatch = true)
+                        }
+                    }
+                }
+                val ok = extractResult.getOrNull()
+                if (ok == null) {
+                    appendTrimmed(sb, "Failed: ${extractResult.exceptionOrNull()?.message ?: "extraction failed"}\n")
+                    publishStreamingLog(sb.toString(), updatePatch = true)
+                    _state.update {
+                        it.copy(
+                            patchState = it.patchState.copy(
+                                isPatching = false,
+                                status = "Failed to extract from zip"
+                            )
+                        )
+                    }
+                    return@launch
+                }
+                appendTrimmed(sb, "Extracted ${ok.partitionName}.img")
+                publishStreamingLog(sb.toString(), updatePatch = true)
+                _state.update {
+                    it.copy(
+                        patchState = it.patchState.copy(
+                            bootImageName = "${ok.partitionName}.img",
+                            bootImagePath = ok.file.absolutePath,
+                            pendingRomZipUri = null
+                        )
+                    )
+                }
+            }
+
+            val boot = _state.value.patchState.bootImagePath
+            val bootName = _state.value.patchState.bootImageName
+            if (boot.isNullOrBlank()) {
+                _state.update {
+                    it.copy(patchState = it.patchState.copy(isPatching = false, status = "Boot image missing after extraction"))
+                }
+                return@launch
+            }
 
             if (bootName != null && bootName.contains("boot", ignoreCase = true) && !bootName.contains("init", ignoreCase = true)) {
                 if (hasInitBoot()) {
@@ -759,6 +849,7 @@ class MainViewModel(
                     status = null,
                     bootImageName = null,
                     bootImagePath = null,
+                    pendingRomZipUri = null,
                     moduleName = null,
                     modulePath = null,
                     isPatching = false,
